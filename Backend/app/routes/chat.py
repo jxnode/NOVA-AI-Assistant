@@ -2,7 +2,6 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.services.chat_service import generate_chat_response
-
 router = APIRouter()
 
 class ChatRequest(BaseModel):
