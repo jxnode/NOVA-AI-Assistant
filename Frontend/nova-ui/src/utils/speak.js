@@ -1,41 +1,26 @@
-const ELEVENLABS_API_KEY = "sk_03dfdbd285c7fb6c54fc7acf4dbcc0e3ce5ee1bd27f0cde0";
 
-const VOICE_ID = "pNInz6obpgDQGcFmaJgB";
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  "https://nova-ai-assistant-backend-o1rp.onrender.com";
 
 let currentAudio = null;
+let currentAudioUrl = null;
 
 export async function speak(text) {
   try {
-    if (currentAudio) {
-      currentAudio.pause();
-      currentAudio.currentTime = 0;
-      currentAudio = null;
-    }
+    stopSpeaking();
 
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
-      {
-        method: "POST",
-        headers: {
-          "xi-api-key": ELEVENLABS_API_KEY,
-          "Content-Type": "application/json",
-          Accept: "audio/mpeg",
-        },
-        body: JSON.stringify({
-          text,
-          model_id: "eleven_turbo_v2_5",
-          voice_settings: {
-            stability: 0.71,
-            similarity_boost: 0.85,
-            style: 0.4,
-            use_speaker_boost: true,
-          },
-        }),
-      }
-    );
+    const response = await fetch(`${API_BASE_URL}/voice/speak`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      body: JSON.stringify({ text }),
+    });
 
     if (!response.ok) {
-      console.error("ElevenLabs error:", await response.text());
+      console.error("NOVA voice error:", response.status);
       return false;
     }
 
@@ -44,16 +29,25 @@ export async function speak(text) {
     const audio = new Audio(audioUrl);
 
     currentAudio = audio;
+    currentAudioUrl = audioUrl;
 
-    audio.addEventListener("ended", () => {
+    const cleanup = () => {
       URL.revokeObjectURL(audioUrl);
-      if (currentAudio === audio) currentAudio = null;
-    });
+
+      if (currentAudio === audio) {
+        currentAudio = null;
+        currentAudioUrl = null;
+      }
+    };
+
+    audio.addEventListener("ended", cleanup, { once: true });
+    audio.addEventListener("error", cleanup, { once: true });
 
     await audio.play();
     return true;
-  } catch (err) {
-    console.error("NOVA voice playback failed:", err);
+  } catch (error) {
+    console.error("NOVA voice playback failed:", error);
+    stopSpeaking();
     return false;
   }
 }
@@ -63,5 +57,10 @@ export function stopSpeaking() {
     currentAudio.pause();
     currentAudio.currentTime = 0;
     currentAudio = null;
+  }
+
+  if (currentAudioUrl) {
+    URL.revokeObjectURL(currentAudioUrl);
+    currentAudioUrl = null;
   }
 }

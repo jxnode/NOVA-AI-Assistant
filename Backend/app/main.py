@@ -1,18 +1,17 @@
 
 from contextlib import asynccontextmanager
 
+import psutil
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routes.chat import router as chat_router
+from app.routes.voice import router as voice_router
 from app.services.memory_service import initialize_database
-
-import psutil
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create the PostgreSQL memories table at startup.
     initialize_database()
     yield
 
@@ -28,6 +27,7 @@ app.add_middleware(
 )
 
 app.include_router(chat_router)
+app.include_router(voice_router)
 
 
 @app.get("/")
