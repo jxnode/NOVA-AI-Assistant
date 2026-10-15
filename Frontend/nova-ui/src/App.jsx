@@ -46,6 +46,60 @@ function getTime() {
 }
 
 export default function App() {
+  const startupGreetingDone = useRef(false);
+  const startupGreetingPending = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let retryHandler = null;
+
+    const playStartupGreeting = async () => {
+      if (startupGreetingDone.current || startupGreetingPending.current) {
+        return;
+      }
+
+      startupGreetingPending.current = true;
+
+      const played = await speak(
+        "Welcome back, boss. N.O.V.A systems online. How can I assist you today?"
+      );
+
+      startupGreetingPending.current = false;
+
+      if (cancelled) return;
+
+      if (played) {
+        startupGreetingDone.current = true;
+
+        if (retryHandler) {
+          window.removeEventListener("pointerdown", retryHandler);
+          window.removeEventListener("keydown", retryHandler);
+        }
+      }
+    };
+
+    const retryGreeting = () => {
+      if (!startupGreetingDone.current) {
+        void playStartupGreeting();
+      }
+    };
+
+    retryHandler = retryGreeting;
+
+    const timer = window.setTimeout(() => {
+      void playStartupGreeting();
+    }, 800);
+
+    window.addEventListener("pointerdown", retryHandler);
+    window.addEventListener("keydown", retryHandler);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("pointerdown", retryHandler);
+      window.removeEventListener("keydown", retryHandler);
+    };
+  }, []);
   const now = useTime();
   const uptime = useUptime();
 

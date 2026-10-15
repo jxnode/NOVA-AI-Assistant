@@ -1,4 +1,5 @@
 const ELEVENLABS_API_KEY = "sk_03dfdbd285c7fb6c54fc7acf4dbcc0e3ce5ee1bd27f0cde0";
+
 const VOICE_ID = "pNInz6obpgDQGcFmaJgB";
 
 let currentAudio = null;
@@ -18,7 +19,7 @@ export async function speak(text) {
         headers: {
           "xi-api-key": ELEVENLABS_API_KEY,
           "Content-Type": "application/json",
-          "Accept": "audio/mpeg",
+          Accept: "audio/mpeg",
         },
         body: JSON.stringify({
           text,
@@ -34,18 +35,26 @@ export async function speak(text) {
     );
 
     if (!response.ok) {
-      const err = await response.text();
-      console.error("ElevenLabs error:", err);
-      return;
+      console.error("ElevenLabs error:", await response.text());
+      return false;
     }
 
     const audioBlob = await response.blob();
     const audioUrl = URL.createObjectURL(audioBlob);
-    currentAudio = new Audio(audioUrl);
-    await currentAudio.play();
+    const audio = new Audio(audioUrl);
 
+    currentAudio = audio;
+
+    audio.addEventListener("ended", () => {
+      URL.revokeObjectURL(audioUrl);
+      if (currentAudio === audio) currentAudio = null;
+    });
+
+    await audio.play();
+    return true;
   } catch (err) {
-    console.error("ElevenLabs error:", err);
+    console.error("NOVA voice playback failed:", err);
+    return false;
   }
 }
 
