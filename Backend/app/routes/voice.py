@@ -25,7 +25,7 @@ class SpeechRequest(BaseModel):
 def generate_speech(text: str, api_key: str) -> bytes:
     payload = {
         "text": text,
-        "model_id": "eleven_turbo_v2_5",
+        "model_id": "eleven_flash_v2_5",
         "voice_settings": {
             "stability": 0.71,
             "similarity_boost": 0.85,
