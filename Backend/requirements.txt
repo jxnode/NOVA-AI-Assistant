@@ -4,3 +4,4 @@ psutil
 groq
 python-dotenv
 psycopg[binary]>=3.2,<4
+python-multipart

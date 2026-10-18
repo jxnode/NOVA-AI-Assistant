@@ -9,8 +9,10 @@ import { speak, stopSpeaking } from "./utils/speak";
 // Local development uses localhost.
 // For deployment, set VITE_API_URL to your deployed backend URL.
 const API_URL = (
- import.meta.env.VITE_API_URL || "https://nova-ai-assistant-backend-o1rp.onrender.com"
+  import.meta.env.VITE_API_URL ||
+  "https://nova-ai-assistant-backend-o1rp.onrender.com"
 ).replace(/\/$/, "");
+
 function useTime() {
   const [now, setNow] = useState(new Date());
 
@@ -49,57 +51,59 @@ export default function App() {
   const startupGreetingDone = useRef(false);
   const startupGreetingPending = useRef(false);
 
+  // Play the startup greeting only after the user's first interaction.
   useEffect(() => {
     let cancelled = false;
-    let retryHandler = null;
+    let greetingStarted = false;
 
-    const playStartupGreeting = async () => {
-      if (startupGreetingDone.current || startupGreetingPending.current) {
+    const retryGreeting = () => {
+      if (
+        cancelled ||
+        greetingStarted ||
+        startupGreetingDone.current ||
+        startupGreetingPending.current
+      ) {
         return;
       }
 
+      greetingStarted = true;
       startupGreetingPending.current = true;
 
-      const played = await speak(
-        "Welcome back, boss. N.O.V.A systems online. How can I assist you today?"
-      );
+      void (async () => {
+        try {
+          const played = await speak(
+            "Welcome back, boss. N.O.V.A systems online. How can I assist you today?"
+          );
 
-      startupGreetingPending.current = false;
+          if (cancelled) return;
 
-      if (cancelled) return;
-
-      if (played) {
-        startupGreetingDone.current = true;
-
-        if (retryHandler) {
-          window.removeEventListener("pointerdown", retryHandler);
-          window.removeEventListener("keydown", retryHandler);
+          if (played) {
+            startupGreetingDone.current = true;
+            window.removeEventListener("pointerdown", retryGreeting, true);
+            window.removeEventListener("keydown", retryGreeting, true);
+          } else {
+            // Let a later user interaction retry if playback fails.
+            greetingStarted = false;
+          }
+        } catch (error) {
+          console.error("NOVA startup greeting failed:", error);
+          greetingStarted = false;
+        } finally {
+          startupGreetingPending.current = false;
         }
-      }
+      })();
     };
 
-    const retryGreeting = () => {
-      if (!startupGreetingDone.current) {
-        void playStartupGreeting();
-      }
-    };
-
-    retryHandler = retryGreeting;
-
-    const timer = window.setTimeout(() => {
-      void playStartupGreeting();
-    }, 800);
-
-    window.addEventListener("pointerdown", retryHandler);
-    window.addEventListener("keydown", retryHandler);
+    window.addEventListener("pointerdown", retryGreeting, true);
+    window.addEventListener("keydown", retryGreeting, true);
 
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
-      window.removeEventListener("pointerdown", retryHandler);
-      window.removeEventListener("keydown", retryHandler);
+      window.removeEventListener("pointerdown", retryGreeting, true);
+      window.removeEventListener("keydown", retryGreeting, true);
     };
   }, []);
+
   const now = useTime();
   const uptime = useUptime();
 
@@ -189,10 +193,12 @@ export default function App() {
           time: getTime(),
         },
       ]);
+
       return;
     }
 
     abortRef.current?.abort();
+
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -202,10 +208,12 @@ export default function App() {
     stopSpeaking();
     setIsTyping(true);
     setActive(true);
+
     setMessages((current) => [
       ...current,
       { sender: "user", text, time: getTime() },
     ]);
+
     setInput("");
 
     try {
@@ -231,6 +239,7 @@ export default function App() {
       let fullReply = "";
 
       setIsTyping(false);
+
       setMessages((current) => [
         ...current,
         { sender: "nova", text: "", time: getTime() },
@@ -271,18 +280,21 @@ export default function App() {
       fullReply += decoder.decode();
 
       if (thisRequestId === requestIdRef.current && fullReply) {
-        speak(fullReply);
+        void speak(fullReply);
       }
     } catch (err) {
       if (thisRequestId !== requestIdRef.current) return;
       if (err.name === "AbortError") return;
 
-      const error = "Connection error. Check whether the NOVA backend is online.";
+      const error =
+        "Connection error. Check whether the NOVA backend is online.";
+
       setMessages((current) => [
         ...current,
         { sender: "nova", text: error, time: getTime() },
       ]);
-      speak(error);
+
+      void speak(error);
     } finally {
       if (thisRequestId === requestIdRef.current) {
         setActive(false);
@@ -353,8 +365,10 @@ export default function App() {
 
   const cpuBarClass =
     stats.cpu > 80 ? "stat-bar warn" : "stat-bar";
+
   const ramBarClass =
     stats.ram_percent > 80 ? "stat-bar warn" : "stat-bar";
+
   const diskBarClass =
     stats.disk_percent > 80 ? "stat-bar warn" : "stat-bar";
 
@@ -398,6 +412,7 @@ export default function App() {
               <span>CPU Usage</span>
               <span className="stat-val">{stats.cpu}%</span>
             </div>
+
             <div className="stat-bar-track">
               <div
                 className={cpuBarClass}
@@ -409,6 +424,7 @@ export default function App() {
               <span>RAM Usage</span>
               <span className="stat-val">{stats.ram_used_gb} GB</span>
             </div>
+
             <div className="stat-bar-track">
               <div
                 className={ramBarClass}
@@ -420,6 +436,7 @@ export default function App() {
               <span>Disk Usage</span>
               <span className="stat-val">{stats.disk_used_gb} GB</span>
             </div>
+
             <div className="stat-bar-track">
               <div
                 className={diskBarClass}
@@ -432,10 +449,12 @@ export default function App() {
                 <div className="sc-label">CPU</div>
                 <div className="sc-val">{stats.cpu}%</div>
               </div>
+
               <div className="stat-cell">
                 <div className="sc-label">MEMORY</div>
                 <div className="sc-val">{stats.ram_percent}%</div>
               </div>
+
               <div className="stat-cell">
                 <div className="sc-label">DISK</div>
                 <div className="sc-val">{stats.disk_used_gb}G</div>
@@ -464,10 +483,12 @@ export default function App() {
                 <span className="wg-label">HUMIDITY</span>
                 <span className="wg-val">94%</span>
               </div>
+
               <div className="wg-item">
                 <span className="wg-label">WIND</span>
                 <span className="wg-val">5.8 m/s</span>
               </div>
+
               <div className="wg-item">
                 <span className="wg-label">FEELS LIKE</span>
                 <span className="wg-val">26.3°C</span>
@@ -479,8 +500,10 @@ export default function App() {
           <div className="widget">
             <div className="widget-header">
               <span className="widget-title">📷 Camera</span>
+
               <div style={{ display: "flex", gap: 10 }}>
                 <span className="widget-refresh">📸</span>
+
                 <span
                   className="widget-refresh"
                   style={{ color: "#ff4444" }}
@@ -588,10 +611,12 @@ export default function App() {
         <div className="chat-panel">
           <div className="chat-panel-header">
             <span className="chat-panel-title">Conversation</span>
+
             <div style={{ display: "flex", gap: 8 }}>
               <button className="chat-btn" onClick={clearMessages}>
                 🗑 Clear
               </button>
+
               <button className="chat-btn" onClick={extractChat}>
                 ↓ Extract
               </button>
