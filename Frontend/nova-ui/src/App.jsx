@@ -24,6 +24,10 @@ const API_URL = (
 
 ).replace(/\/$/, "");
 
+// Optional local Python wake-word bridge (development only).
+const WAKE_BRIDGE_URL =
+  import.meta.env.VITE_WAKE_BRIDGE_URL || "";
+
 function useTime() {
 
   const [now, setNow] = useState(new Date());
@@ -203,6 +207,7 @@ export default function App() {
   const abortRef = useRef(null);
 
   const requestIdRef = useRef(0);
+  const sendMessageRef = useRef(null);
 
   const [stats, setStats] = useState({
 
@@ -485,6 +490,51 @@ export default function App() {
     }
 
   };
+
+  // Keep the latest sendMessage function available to the wake bridge.
+  useEffect(() => {
+    sendMessageRef.current = sendMessage;
+  });
+
+  // Poll the local Python bridge for commands detected by the Hey NOVA model.
+  useEffect(() => {
+    if (!WAKE_BRIDGE_URL) return undefined;
+
+    let stopped = false;
+    let polling = false;
+
+    const pollWakeCommand = async () => {
+      if (stopped || polling) return;
+      polling = true;
+
+      try {
+        const response = await fetch(`${WAKE_BRIDGE_URL}/next`, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const command = data.text?.trim();
+
+        if (!stopped && command) {
+          sendMessageRef.current?.(command);
+        }
+      } catch {
+        // The local bridge may not be running yet.
+      } finally {
+        polling = false;
+      }
+    };
+
+    const timer = window.setInterval(pollWakeCommand, 500);
+    void pollWakeCommand();
+
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   const clearMessages = () => {
 

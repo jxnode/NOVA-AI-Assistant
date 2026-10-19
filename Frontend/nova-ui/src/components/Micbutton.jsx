@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from "react";
 
 const API_URL = (
@@ -14,13 +13,47 @@ export default function Micbutton({
   const [processing, setProcessing] = useState(false);
   const [status, setStatus] = useState("");
 
+  const [wakeEnabled, setWakeEnabled] = useState(false);
+  const [wakeStatus, setWakeStatus] = useState("");
+
   const recorderRef = useRef(null);
   const streamRef = useRef(null);
   const chunksRef = useRef([]);
   const busyRef = useRef(false);
 
+  const recognitionRef = useRef(null);
+  const wakeEnabledRef = useRef(false);
+  const waitingForCommandRef = useRef(false);
+  const onTranscriptRef = useRef(onTranscript);
+  const onSpeakingChangeRef = useRef(onSpeakingChange);
+
+  useEffect(() => {
+    onTranscriptRef.current = onTranscript;
+    onSpeakingChangeRef.current = onSpeakingChange;
+  }, [onTranscript, onSpeakingChange]);
+
+  const stopTracks = () => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+  };
+
+  // Preserve the existing microphone recording cleanup.
   useEffect(() => {
     return () => {
+      wakeEnabledRef.current = false;
+
+      if (recognitionRef.current) {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
+
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // Recognition may already be stopped.
+        }
+      }
+
       try {
         if (recorderRef.current?.state === "recording") {
           recorderRef.current.stop();
@@ -29,23 +62,192 @@ export default function Micbutton({
         // Recorder may already be stopped.
       }
 
-      streamRef.current?.getTracks().forEach((track) => track.stop());
+      stopTracks();
     };
   }, []);
 
-  const stopTracks = () => {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
+  // Optional browser-based NOVA wake-word detection.
+  useEffect(() => {
+    if (!wakeEnabled) {
+      wakeEnabledRef.current = false;
+      waitingForCommandRef.current = false;
+      return undefined;
+    }
+
+    const SpeechRecognition =
+      window.SpeechRecognition ||
+      window.webkitSpeechRecognition;
+
+    // Support is checked in toggleWake(); this is only a safety guard.
+    if (!SpeechRecognition) return undefined;
+
+    const recognition = new SpeechRecognition();
+
+    recognitionRef.current = recognition;
+    wakeEnabledRef.current = true;
+
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = "en-IN";
+
+    let restartTimer = null;
+
+    recognition.onstart = () => {
+      setWakeStatus('Listening for "NOVA"...');
+    };
+
+    recognition.onresult = (event) => {
+      for (
+        let i = event.resultIndex;
+        i < event.results.length;
+        i += 1
+      ) {
+        if (!event.results[i].isFinal) continue;
+
+        const phrase = event.results[i][0].transcript.trim();
+
+        if (!phrase) continue;
+
+        // Do not send voice commands while recording or transcribing.
+        if (busyRef.current) continue;
+
+        // The next recognized phrase after "NOVA" is the command.
+        if (waitingForCommandRef.current) {
+          waitingForCommandRef.current = false;
+
+          setWakeStatus(`Command recognized: ${phrase}`);
+          onTranscriptRef.current?.(phrase);
+          continue;
+        }
+
+        const match = /\b(?:hey\s+)?nova\b/i.exec(phrase);
+
+        if (!match) continue;
+
+        // Handle "NOVA, tell me a joke" in one phrase.
+        const command = phrase
+          .slice(match.index + match[0].length)
+          .replace(/^[\s,.:!?-]+/, "")
+          .trim();
+
+        if (command) {
+          setWakeStatus(`Command recognized: ${command}`);
+          onTranscriptRef.current?.(command);
+        } else {
+          waitingForCommandRef.current = true;
+          setWakeStatus("NOVA activated. Say your command...");
+        }
+      }
+    };
+
+    recognition.onerror = (event) => {
+      if (
+        event.error === "not-allowed" ||
+        event.error === "service-not-allowed"
+      ) {
+        wakeEnabledRef.current = false;
+        setWakeEnabled(false);
+        setWakeStatus(
+          "Microphone permission denied. Check browser settings."
+        );
+      } else if (
+        event.error !== "no-speech" &&
+        event.error !== "aborted"
+      ) {
+        setWakeStatus(`Recognition error: ${event.error}`);
+      }
+    };
+
+    recognition.onend = () => {
+      if (!wakeEnabledRef.current) return;
+
+      // Give the browser a moment before restarting recognition.
+      restartTimer = window.setTimeout(() => {
+        if (!wakeEnabledRef.current) return;
+
+        try {
+          recognition.start();
+        } catch {
+          // The browser may already be restarting.
+        }
+      }, 300);
+    };
+
+    let startFailTimer = null;
+
+    try {
+      recognition.start();
+    } catch {
+      wakeEnabledRef.current = false;
+
+      // Report the failure from a callback, not synchronously inside the effect.
+      startFailTimer = window.setTimeout(() => {
+        setWakeEnabled(false);
+        setWakeStatus("Could not start wake-word recognition.");
+      }, 0);
+    }
+
+    return () => {
+      wakeEnabledRef.current = false;
+      waitingForCommandRef.current = false;
+
+      if (restartTimer !== null) {
+        window.clearTimeout(restartTimer);
+      }
+
+      if (startFailTimer !== null) {
+        window.clearTimeout(startFailTimer);
+      }
+
+      recognition.onresult = null;
+      recognition.onend = null;
+      recognition.onerror = null;
+      recognition.onstart = null;
+
+      try {
+        recognition.stop();
+      } catch {
+        // Recognition may already be stopped.
+      }
+
+      if (recognitionRef.current === recognition) {
+        recognitionRef.current = null;
+      }
+    };
+  }, [wakeEnabled]);
+
+  // Clear the previous wake-word message whenever the user flips the switch.
+  // (Doing this in the click handler rather than in the effect above also keeps
+  // permission / unsupported-browser messages visible instead of wiping them.)
+  const toggleWake = () => {
+    setWakeStatus("");
+
+    if (
+      !wakeEnabled &&
+      !(window.SpeechRecognition || window.webkitSpeechRecognition)
+    ) {
+      setWakeStatus(
+        "Wake-word recognition is unsupported here. Try Chrome or Edge."
+      );
+      return;
+    }
+
+    setWakeEnabled((enabled) => !enabled);
   };
 
+  // Existing MediaRecorder + FastAPI transcription implementation.
   const startRecording = async () => {
-    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    if (
+      !navigator.mediaDevices?.getUserMedia ||
+      !window.MediaRecorder
+    ) {
       setStatus("Audio recording is not supported in this browser.");
       return;
     }
 
     try {
       setStatus("Requesting microphone...");
+
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
       });
@@ -75,14 +277,14 @@ export default function Micbutton({
         setStatus("Recording failed. Check your microphone and try again.");
         setRecording(false);
         busyRef.current = false;
-        onSpeakingChange?.(false);
+        onSpeakingChangeRef.current?.(false);
         stopTracks();
       };
 
       recorder.onstop = async () => {
         setRecording(false);
         setProcessing(true);
-        onSpeakingChange?.(true);
+        onSpeakingChangeRef.current?.(true);
         setStatus("Transcribing your speech...");
 
         try {
@@ -91,7 +293,7 @@ export default function Micbutton({
           });
 
           if (!audioBlob.size) {
-            throw new Error("No audio was recorded. Try speaking again.");
+            throw new Error("No audio was recorded. Try again.");
           }
 
           const extension = audioBlob.type.includes("mp4")
@@ -112,7 +314,8 @@ export default function Micbutton({
 
           if (!response.ok) {
             throw new Error(
-              data.detail || `Transcription failed (HTTP ${response.status}).`
+              data.detail ||
+                `Transcription failed (HTTP ${response.status}).`
             );
           }
 
@@ -124,23 +327,24 @@ export default function Micbutton({
           }
 
           setStatus(`Recognized: ${transcript}`);
-          onTranscript?.(transcript);
+          onTranscriptRef.current?.(transcript);
         } catch (error) {
           console.error("NOVA transcription error:", error);
           setStatus(error.message || "Could not transcribe the recording.");
         } finally {
           setProcessing(false);
           busyRef.current = false;
-          onSpeakingChange?.(false);
+          onSpeakingChangeRef.current?.(false);
           stopTracks();
         }
       };
 
       busyRef.current = true;
       recorder.start();
+
       setRecording(true);
       setStatus("Recording... click the mic again to finish.");
-      onSpeakingChange?.(true);
+      onSpeakingChangeRef.current?.(true);
     } catch (error) {
       console.error("NOVA microphone error:", error);
 
@@ -154,21 +358,27 @@ export default function Micbutton({
       setStatus(message);
       setRecording(false);
       busyRef.current = false;
-      onSpeakingChange?.(false);
+      onSpeakingChangeRef.current?.(false);
       stopTracks();
     }
   };
 
   const toggleRecording = () => {
     if (processing || busyRef.current) {
-      if (recording && recorderRef.current?.state === "recording") {
+      if (
+        recording &&
+        recorderRef.current?.state === "recording"
+      ) {
         setStatus("Finishing recording...");
         recorderRef.current.stop();
       }
       return;
     }
 
-    if (recording && recorderRef.current?.state === "recording") {
+    if (
+      recording &&
+      recorderRef.current?.state === "recording"
+    ) {
       setStatus("Finishing recording...");
       recorderRef.current.stop();
       return;
@@ -177,14 +387,11 @@ export default function Micbutton({
     void startRecording();
   };
 
+  // Layout note: .mic-control uses display: contents (see index.css), so the
+  // mic button sits in the same row as the camera and keyboard buttons and the
+  // wake-word panel wraps onto its own centred row underneath them.
   return (
-    <div
-      style={{
-        display: "inline-flex",
-        flexDirection: "column",
-        alignItems: "center",
-      }}
-    >
+    <div className="mic-control">
       <button
         type="button"
         className="action-btn"
@@ -234,23 +441,49 @@ export default function Micbutton({
         </svg>
       </button>
 
-      {status && (
-        <span
-          role="status"
-          aria-live="polite"
-          style={{
-            marginTop: 8,
-            maxWidth: 240,
-            fontSize: 11,
-            lineHeight: 1.5,
-            textAlign: "center",
-            overflowWrap: "anywhere",
-            color: recording ? "#ff7777" : "inherit",
-          }}
+      <div className="wake-panel">
+        <button
+          type="button"
+          className={`wake-toggle${wakeEnabled ? " is-active" : ""}`}
+          onClick={toggleWake}
+          aria-pressed={wakeEnabled}
+          aria-label="NOVA wake word listening"
+          title={
+            wakeEnabled
+              ? "Pause browser wake-word listening"
+              : "Start browser wake-word listening"
+          }
         >
-          {status}
-        </span>
-      )}
+          <span className="wake-dot" aria-hidden="true" />
+          <span className="wake-label">Wake Word</span>
+          <span className="wake-state">
+            {wakeEnabled ? "Active" : "Paused"}
+          </span>
+          <span className="wake-track" aria-hidden="true">
+            <span className="wake-thumb" />
+          </span>
+        </button>
+
+        {wakeStatus && (
+          <span
+            className="wake-message"
+            role="status"
+            aria-live="polite"
+          >
+            {wakeStatus}
+          </span>
+        )}
+
+        {status && (
+          <span
+            className={`wake-message${recording ? " recording" : ""}`}
+            role="status"
+            aria-live="polite"
+          >
+            {status}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
