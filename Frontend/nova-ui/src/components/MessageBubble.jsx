@@ -1,13 +1,14 @@
+
 import TypingText from "./TypingText";
 
 const bubbleCSS = `
   @keyframes bubbleIn {
     from { opacity: 0; transform: translateY(10px) scale(0.97); }
-    to   { opacity: 1; transform: translateY(0)    scale(1); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
   }
 
   @keyframes novaScan {
-    0%   { left: -100%; }
+    0% { left: -100%; }
     100% { left: 200%; }
   }
 
@@ -99,10 +100,9 @@ const bubbleCSS = `
     text-align: right;
   }
 
-  /* Typing indicator */
   @keyframes typingDot {
     0%, 100% { transform: translateY(0); opacity: 0.4; }
-    50%       { transform: translateY(-5px); opacity: 1; }
+    50% { transform: translateY(-5px); opacity: 1; }
   }
 
   .typing-indicator {
@@ -120,7 +120,8 @@ const bubbleCSS = `
   }
 
   .typing-dot {
-    width: 6px; height: 6px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     background: #cc3333;
     box-shadow: 0 0 6px rgba(200,0,0,0.6);
@@ -131,17 +132,18 @@ const bubbleCSS = `
   .typing-dot:nth-child(3) { animation: typingDot 1s 0.4s ease-in-out infinite; }
 `;
 
-function getTime() {
-  return new Date().toLocaleTimeString('en-US', {
-    hour: '2-digit', minute: '2-digit', second: '2-digit'
-  });
-}
-
 function TypingIndicator() {
   return (
     <>
       <style>{bubbleCSS}</style>
-      <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '16px', padding: '0 4px' }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-start",
+          marginBottom: "16px",
+          padding: "0 4px",
+        }}
+      >
         <div className="typing-indicator">
           <div className="typing-dot" />
           <div className="typing-dot" />
@@ -160,12 +162,14 @@ function MessageBubble({ sender, text, time, isTyping }) {
   return (
     <>
       <style>{bubbleCSS}</style>
-      <div style={{
-        display: "flex",
-        justifyContent: isNova ? "flex-start" : "flex-end",
-        marginBottom: "16px",
-        padding: "0 4px",
-      }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: isNova ? "flex-start" : "flex-end",
+          marginBottom: "16px",
+          padding: "0 4px",
+        }}
+      >
         {isNova ? (
           <div className="bubble-nova">
             <div className="bubble-nova-label">NOVA</div>

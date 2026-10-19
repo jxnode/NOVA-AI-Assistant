@@ -1,5 +1,3 @@
-import { useEffect, useRef } from "react";
-
 const orbCSS = `
   @keyframes spin         { from { transform: rotate(0deg); }   to { transform: rotate(360deg); } }
   @keyframes spinReverse  { from { transform: rotate(0deg); }   to { transform: rotate(-360deg); } }
